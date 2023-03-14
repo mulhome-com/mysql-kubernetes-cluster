@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  #namespace: mulhome-mysql
+data:
+  init.sh: |-
+    set -ex
+    ret=`mysql -uroot -e "select user from mysql.user;" | grep root`
+    while [[ -z "${ret}" ]]; do
+        sleep 1
+        ret=$(mysql -uroot -e "select user from mysql.user" | grep root)
+    done
+    [[ $HOSTNAME =~ ^([a-z|-]+)-([0-9]+)$ ]] || exit 1
+    template=${BASH_REMATCH[1]}
+    ordinal=${BASH_REMATCH[2]}
+    if [[ $ordinal -eq 0 ]]; then
+        rm -rf /mnt/share/*
+        mysql -uroot -e "create user replication_user@'%' identified by 'rep_password';"
+        mysql -uroot -e "grant replication slave on *.* to replication_user@'%';"
+        mysql -uroot -e "delete from mysql.user where user='root' and host='%';"
+        mysql -uroot -e "grant all privileges on *.* to admin@'%';"
+        mysql -uroot -e "flush privileges;"
+        mysql -uroot -e "show master status\G" | grep File | awk -F ":" '{print$2}' |  sed -e 's/ //g' > /mnt/share/cur_master_file &
+        mysql -uroot -e "show master status\G" | grep Position | awk -F ":" '{print$2}' |  sed -e 's/ //g' > /mnt/share/cur_master_position &
+        mysqldump -uroot --all-databases > /mnt/share/cur_data_sql &
+    else
+        while [[ 1 ]]; do
+            if [[ -f /mnt/share/cur_master_file ]]; then
+                break
+            fi
+            sleep 1
+        done
+
+        if [[ -f /mnt/share/cur_master_file ]]; then
+            file=$(cat /mnt/share/cur_master_file)
+            position=$(cat /mnt/share/cur_master_position)
+            mysql -uroot -e "STOP SLAVE;"
+            mysql -uroot < /mnt/share/cur_data_sql
+            mysql -uroot -e "CHANGE MASTER TO MASTER_HOST = '${template}-0.mysql-svc', MASTER_USER = 'replication_user', MASTER_PASSWORD = 'rep_password', MASTER_LOG_FILE = '${file}', MASTER_LOG_POS = ${position};"
+            mysql -uroot -e "START SLAVE;"
+        fi
+    fi
+  primary.cnf: |
+    # Apply this config on the primary 
+    [mysqld]
+    log-bin
+  replica.cnf: |
+    #Apply this config only on replicas
+    [mysqld]
+    super-read-only

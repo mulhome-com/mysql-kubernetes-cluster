@@ -8,49 +8,56 @@ Requirement Environment:
 - Sysbench
 
 
+
+
+
 Process:
 
-- Prepare the init.sh which configure master and slave server and primary.cnf in the config map.
 
 > kubectl -n ${namespace} apply -f mysql-configmap.yaml
 
+- Prepare the init.sh which configure master and slave server and primary.cnf in the config map.
 
-- Store the user and password for mysql connection
 
 > kubectl -n ${namespace} apply -f mysql-secret.yaml
 
+- Store the user and password for mysql connection
 
-- Build the new volume claim for sharing backup file between master and slave server.
 
 > kubectl -n ${namespace} apply -f mysql-volume-claim.yaml
 
+- Build the new volume claim for sharing backup file between master and slave server.
 
-- Build the service which use nodeport to performance testing for statefulset
 
 > kubectl -n ${namespace} apply -f mysql-service.yaml
 
+- Build the service which use nodeport to performance testing for statefulset
 
-- Setup the statefulset to create referenced pod entity
 
 > kubectl -n ${namespace} apply -f mysql-statefulset.yaml
 
+- Setup the statefulset to create referenced pod entity
 
-- Build the master service which can be write.
 
 > kubectl -n ${namespace} apply -f mysql-service-master.yaml
 
+- Build the master service which can be write.
+
+
+> kubectl -n ${namespace} get pod --watch
 
 - Check the status
 
-> kubectl -n ${namespace} get pod --watch
+
 
 
 
 Test:
 
-- List the service for node port
 
 > kubectl -n ${namespace} get svc
+
+- List the service for node port
 
 
 read-write-service: 32643
@@ -58,6 +65,7 @@ read-write-service: 32643
 read-only-service: 31290 
 
 pod-server: testsvr
+
 
 
 - Run the sysbench test
@@ -69,16 +77,5 @@ pod-server: testsvr
 
 Get the result
 
-Threads started!
-
-SQL statistics:
-    queries performed:
-        read:                            151774
-        write:                           0
-        other:                           21682
-        total:                           173456
-    transactions:                        10841  (1073.13 per sec.)
-    queries:                             173456 (17170.06 per sec.)
-    ignored errors:                      0      (0.00 per sec.)
-    reconnects:                          0      (0.00 per sec.)
+>    queries:                             173456 (17170.06 per sec.)
 

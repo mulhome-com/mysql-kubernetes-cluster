@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  replicas: 3
+  serviceName: mysql-svc
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      initContainers:
+      - name: init-mysql
+        image: mysql:5.7
+        command:
+          - bash
+          - "-c"
+          - |
+            set -ex
+            [[ $HOSTNAME =~ -([0-9]+)$ ]] || exit 1
+            ordinal=${BASH_REMATCH[1]}
+            echo [mysqld] > /etc/mysql/conf.d/server-id.cnf
+            echo server-id=$((100 + $ordinal)) >> /etc/mysql/conf.d/server-id.cnf
+            if [[ $ordinal -eq 0 ]]; then
+              cp /mnt/config-map/primary.cnf /etc/mysql/conf.d/
+            fi
+            cp /mnt/config-map/init.sh /docker-entrypoint-initdb.d/
+            #cp /mnt/config-map/initdb.sh /etc/mysql/conf.d/
+            chmod 777 /mnt/share
+        volumeMounts:
+        - name: mysql-config
+          mountPath: /mnt/config-map
+        - name: mysql-init
+          mountPath: /docker-entrypoint-initdb.d
+        - name: mysql-share
+          mountPath: /mnt/share
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+      containers:
+      - name: mysql
+        image: mysql:5.7
+        env:
+        - name: MYSQL_ALLOW_EMPTY_PASSWORD
+          value: "1"
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-user
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: mysql-password
+        ports:
+        - name: mysql
+          containerPort: 3306
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: mysql-init
+          mountPath: /docker-entrypoint-initdb.d
+        - name: mysql-share
+          mountPath: /mnt/share
+        - name: conf
+          mountPath: /etc/mysql/conf.d
+      volumes:
+      - name: conf
+        emptyDir: {}
+      - name: mysql-init
+        emptyDir: {}
+      - name: mysql-config
+        configMap:
+          name: mysql-config
+      - name: mysql-share
+        persistentVolumeClaim:
+          claimName: mysql-data-pvc
+  volumeClaimTemplates:
+  - metadata:
+      name: mysql-data
+    spec:
+      accessModes: [ "ReadWriteMany" ]
+      storageClassName: "nfs-client"
+      resources:
+        requests:
+          storage: 1Gi
